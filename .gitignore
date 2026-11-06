@@ -1,0 +1,21 @@
+# Local Vagrant state, VM identifiers, and generated SSH keys
+.vagrant/
+
+# Virtual machine images and packaged boxes
+*.box
+*.vdi
+*.vmdk
+
+# Local credentials and environment configuration
+.aws/
+.env
+.env.*
+!.env.example
+
+# Editor and operating system files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

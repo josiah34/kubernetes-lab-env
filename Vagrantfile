@@ -3,7 +3,7 @@
 # vi: set ft=ruby :
 
 MACHINES = [
-  { name: "control-node", ip: "192.168.56.10", cpu: 1, ram: 2048 },
+  { name: "control-node", ip: "192.168.56.10", cpu: 2, ram: 2048 },
   { name: "node-0",  ip: "192.168.56.21", cpu: 1, ram: 2048 },
   { name: "node-1",  ip: "192.168.56.22", cpu: 1, ram: 2048 }
 ]
@@ -23,11 +23,6 @@ Vagrant.configure("2") do |config|
         vb.memory = node[:ram]
       end
 
-      if node[:name] == "control-node"
-        vm.vm.provision "shell",
-            path: "scripts/install-tools.sh"
-      end
-
       vm.vm.provision "shell", inline: <<-SHELL
         cat >> /etc/hosts <<EOF
 192.168.56.10 control-node
@@ -35,6 +30,9 @@ Vagrant.configure("2") do |config|
 192.168.56.22 node-1
 EOF
       SHELL
+
+    vm.vm.provision "shell",
+        path: "scripts/setup.sh"
     end
   end
 end

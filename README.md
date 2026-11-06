@@ -10,11 +10,13 @@ The `Vagrantfile` defines three Debian Bookworm virtual machines: one intended c
 
 | Machine | Intended role | IP address | CPUs | Memory |
 | --- | --- | --- | --- | --- |
-| `control-node` | Control plane | `192.168.56.10` | 1 | 512 MB |
+| `control-node` | Control plane | `192.168.56.10` | 1 | 2048 MB |
 | `node-0` | Worker | `192.168.56.21` | 1 | 2048 MB |
 | `node-1` | Worker | `192.168.56.22` | 1 | 2048 MB |
 
 Each VM receives a hostname and entries in `/etc/hosts` for the other machines. VirtualBox names are prefixed with `k8s-`.
+
+The control node's RAM allocation was increased from 512 MB to 2048 MB because the original allocation was too small for the lab.
 
 ## Networking
 
@@ -26,7 +28,7 @@ If these addresses conflict with an existing network, update both the machine de
 
 - Vagrant and VirtualBox installed on your computer.
 - Hardware virtualization enabled.
-- Enough available memory and disk space for all three VMs. The current configuration assigns 4608 MB of RAM in total, in addition to your host's own requirements.
+- Enough available memory and disk space for all three VMs. The current configuration assigns 6144 MB (6 GiB) of RAM in total, in addition to your host's own requirements.
 - Internet access to download the Debian box and any packages installed during provisioning.
 
 ## Current setup status
@@ -35,7 +37,7 @@ This repository currently defines the VM infrastructure for the lab. It does not
 
 The control node runs `scripts/install-tools.sh`, which updates the package index and installs general utilities such as `curl`, `git`, `vim`, `jq`, and network troubleshooting tools. This script does not install Kubernetes.
 
-Installing the Kubernetes components, initializing the control plane, configuring cluster networking, and joining the workers still need to be implemented. Review the VM resource allocations before installing Kubernetes; the control node currently has only 512 MB of RAM and one CPU.
+Installing the Kubernetes components, initializing the control plane, configuring cluster networking, and joining the workers still need to be implemented. Each VM currently has 2048 MB of RAM and one CPU.
 
 ## Starting the environment
 

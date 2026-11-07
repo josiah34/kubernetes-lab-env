@@ -19,3 +19,6 @@
 *.swo
 .DS_Store
 Thumbs.db
+
+# Generated Kubernetes cluster join credentials
+/join-command.sh

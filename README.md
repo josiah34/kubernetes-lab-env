@@ -38,15 +38,16 @@ Vagrant runs `scripts/setup.sh` on all three machines after adding their host en
 - Disables swap for the current session.
 - Configures the `overlay` and `br_netfilter` kernel modules to load at boot and loads them immediately.
 - Enables IP forwarding and bridge traffic processing through iptables using persistent sysctl settings.
-- Installs and starts containerd with systemd cgroups enabled.
+- Requires root privileges and emits timestamped status and error messages.
+- Installs and restarts containerd with systemd cgroups enabled, then verifies that the service is active and the cgroup setting is applied.
 - Installs `kubelet`, `kubeadm`, and `kubectl` from the Kubernetes v1.35 package repository and holds those packages against automatic upgrades.
 - Sets the kubelet's node IP to the corresponding private-network address and enables the kubelet service.
 
 On `control-node`, the script also initializes the control plane with `kubeadm` when `/etc/kubernetes/admin.conf` does not exist. It uses `192.168.56.10` as the API server's advertised address and `10.244.0.0/16` as the pod network CIDR.
 
-It then copies the administrator kubeconfig to `/home/vagrant/.kube/config` and installs the Calico v3.31.4 operator and custom resources, configuring Calico to use the same pod CIDR.
+It waits for the API server readiness endpoint before copying the administrator kubeconfig to `/home/vagrant/.kube/config`. It installs the Calico v3.31.4 CRDs using server-side apply, waits for the installation CRD to be established, applies the operator, and waits for its deployment rollout before applying custom resources with the same pod CIDR.
 
-Worker nodes are prepared by the script but must be joined to the cluster manually.
+The control node writes a generated `kubeadm join` command to `/vagrant/join-command.sh`, which is shared with the host and workers through the repository directory. Workers execute this command automatically unless `/etc/kubernetes/kubelet.conf` already exists. If the shared file is missing or empty, worker provisioning fails with an error. This file contains cluster join credentials and is excluded from Git.
 
 ## Starting the environment
 
@@ -59,25 +60,33 @@ vagrant up --provider=virtualbox
 
 The first command checks the Vagrant configuration. The second creates and provisions the VMs; it may take longer on the first run while the base box downloads.
 
-## Joining the worker nodes
+## Joining and checking the cluster
 
-After provisioning completes, connect to the control node and generate a join command:
+Workers join automatically during provisioning. Provision the control node before the workers so the shared join command is available. If starting machines individually, use this order:
+
+```sh
+vagrant up control-node --provider=virtualbox
+vagrant up node-0 node-1 --provider=virtualbox
+```
+
+After provisioning, connect to the control node and check the cluster:
 
 ```sh
 vagrant ssh control-node
-sudo kubeadm token create --print-join-command
-```
-
-Copy the printed `kubeadm join` command, then run it with `sudo` on each worker through `vagrant ssh node-0` and `vagrant ssh node-1`. The join command contains credentials for joining the cluster; keep it private.
-
-Once both workers have joined, check the cluster from the control node:
-
-```sh
 kubectl get nodes -o wide
 kubectl get pods -A
 ```
 
-The `vagrant` user on the control node can run these commands using the kubeconfig installed by the setup script. Nodes may take some time to become ready while networking starts.
+The `vagrant` user on the control node can run these commands using the kubeconfig installed by the setup script. Nodes may take some time to become ready while networking starts; the script waits for the API server and operator, but does not wait for every node or Calico pod to become ready.
+
+If a worker fails because its join command is missing or expired, refresh the shared file from your host:
+
+```sh
+vagrant ssh control-node -c 'sudo kubeadm token create --print-join-command' > join-command.sh
+vagrant provision node-0 node-1
+```
+
+Keep `join-command.sh` private. It is generated locally and should never be committed.
 
 ## Connecting to the VMs
 
@@ -112,13 +121,16 @@ vagrant destroy
 
 The current hosts-file provisioner appends entries on each run, so repeated provisioning can create duplicate `/etc/hosts` entries.
 
-The setup script is not fully repeatable yet: it uses `kubectl create` for Calico resources and writes an existing GPG key file without an explicit overwrite option. Re-running provisioning may fail at those steps. Swap is disabled at runtime only; the script does not change `/etc/fstab` to keep it disabled after a reboot. I will mopdify script to handle this in future commits. 
+The script skips control-plane initialization when `/etc/kubernetes/admin.conf` exists and skips worker joins when `/etc/kubernetes/kubelet.conf` exists. Calico resources now use `kubectl apply`. However, provisioning is not fully repeatable: the GPG key import still writes an existing file without an explicit overwrite option and may fail or prompt on subsequent runs. Each run also regenerates the containerd configuration, replacing local edits.
+
+Swap is disabled at runtime only; the script does not change `/etc/fstab` to keep it disabled after a reboot.
 
 ## Repository layout
 
 ```text
 Vagrantfile       # VM resources, addresses, and provisioning
-scripts/setup.sh # Node preparation and control-plane initialization
+scripts/setup.sh # Node preparation, control-plane initialization, and worker joins
+join-command.sh  # Generated join credentials (ignored by Git)
 README.md        # Setup and usage instructions
 .gitignore       # Excludes local VM state and credentials
 ```

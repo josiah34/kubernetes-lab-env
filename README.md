@@ -18,6 +18,24 @@ Each VM receives a hostname and entries in `/etc/hosts` for the other machines. 
 
 The control node has two CPUs and 2048 MB of RAM. Each worker has one CPU and 2048 MB of RAM.
 
+## Cluster architecture
+
+```mermaid
+flowchart TD
+    control["Control node · 192.168.56.10<br/>Kubernetes control plane + Helm"]
+    worker0["Worker · node-0<br/>192.168.56.21"]
+    worker1["Worker · node-1<br/>192.168.56.22"]
+
+    control --> worker0
+    control --> worker1
+
+    style control fill:#dbeafe,stroke:#3b82f6,color:#1e3a8a
+    style worker0 fill:#dcfce7,stroke:#22c55e,color:#14532d
+    style worker1 fill:#dcfce7,stroke:#22c55e,color:#14532d
+```
+
+All three VMs share a VirtualBox private network. Helm runs on the control node, and Calico provides pod networking.
+
 ## Networking
 
 The machines use a VirtualBox private network so your host computer and the VMs can communicate using the addresses above. This configuration does not automatically expose the VMs to other devices on your physical local network. Access from those devices requires additional network configuration, such as bridged networking or routing.
@@ -48,6 +66,8 @@ On `control-node`, the script also initializes the control plane with `kubeadm` 
 It waits for the API server readiness endpoint before copying the administrator kubeconfig to `/home/vagrant/.kube/config`. It installs the Calico v3.31.4 CRDs using server-side apply, waits for the installation CRD to be established, applies the operator, and waits for its deployment rollout before applying custom resources with the same pod CIDR.
 
 The control node writes a generated `kubeadm join` command to `/vagrant/join-command.sh`, which is shared with the host and workers through the repository directory. Workers execute this command automatically unless `/etc/kubernetes/kubelet.conf` already exists. If the shared file is missing or empty, worker provisioning fails with an error. This file contains cluster join credentials and is excluded from Git.
+
+After control-plane setup, the script installs Helm on `control-node` only. It downloads the Helm APT signing key from the Buildkite-hosted repository, checks its fingerprint against the value pinned in `install_helm`, configures the signed APT source, and installs the `helm` package. A fingerprint mismatch stops provisioning. The Helm package version is not pinned or held, so the version installed depends on the repository at provisioning time.
 
 ## Starting the environment
 
@@ -87,6 +107,26 @@ vagrant provision node-0 node-1
 ```
 
 Keep `join-command.sh` private. It is generated locally and should never be committed.
+
+## Using Helm
+
+Connect to the control node as the `vagrant` user and verify the installation and cluster access:
+
+```sh
+vagrant ssh control-node
+helm version
+kubectl cluster-info
+helm list --all-namespaces
+```
+
+Helm uses `/home/vagrant/.kube/config`, which provisioning creates for the `vagrant` user. Run Helm as that user so it can use this configuration. An empty release list is expected before you install any charts; provisioning installs Helm but does not deploy charts.
+
+To install a chart you have chosen, replace the placeholders below with its release name, chart reference, and target namespace:
+
+```sh
+helm install <release-name> <chart-reference> --namespace <namespace> --create-namespace
+helm list --all-namespaces
+```
 
 ## Connecting to the VMs
 
@@ -129,7 +169,7 @@ Swap is disabled at runtime only; the script does not change `/etc/fstab` to kee
 
 ```text
 Vagrantfile       # VM resources, addresses, and provisioning
-scripts/setup.sh # Node preparation, control-plane initialization, and worker joins
+scripts/setup.sh # Node preparation, control plane, Calico, worker joins, and Helm
 join-command.sh  # Generated join credentials (ignored by Git)
 README.md        # Setup and usage instructions
 .gitignore       # Excludes local VM state and credentials
